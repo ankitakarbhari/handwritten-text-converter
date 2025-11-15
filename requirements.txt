@@ -1,0 +1,9 @@
+streamlit
+pytesseract
+Pillow
+opencv-python-headless
+pdfkit
+numpy
+fpdf
+easyocr
+python-docx
