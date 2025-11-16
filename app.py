@@ -1,144 +1,192 @@
 import streamlit as st
-from PIL import Image, ImageEnhance
+from PIL import Image
 import numpy as np
-import easyocr
 import io
 from docx import Document
 from fpdf import FPDF
+import pytesseract
 import time
+from datetime import datetime
 
-# ---------------------- PAGE SETTINGS ---------------------- #
+# ---------------------- PAGE SETUP ---------------------- #
 st.set_page_config(page_title="Handwritten to Text", layout="wide")
 
 st.markdown("""
-<h1 style='text-align:center; color:#4CAF50; font-size:42px'>
-✍️ Handwritten Notes → Digital Text  
-<br><span style='font-size:22px;'>AI-Powered Multi-Language Converter</span>
-</h1>
+    <h1 style='text-align:center; color:#4CAF50; font-size:42px'>
+        ✍️ Handwritten Notes → Digital Text <br> <span style='font-size:22px;'>Modern & Beautiful Converter</span>
+    </h1>
 """, unsafe_allow_html=True)
 
-st.sidebar.header("⚙️ Settings")
+# Initialize session state
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-# ----------------- MULTI-LANGUAGE SUPPORT ----------------- #
-languages = st.sidebar.multiselect(
-    "Select OCR Languages",
-    ["en", "hi", "mr", "ta", "te", "bn"],
-    default=["en"]
-)
+if "profile" not in st.session_state:
+    st.session_state.profile = {
+        "name": "",
+        "email": "",
+        "language": "eng"
+    }
 
-reader = easyocr.Reader(languages)
+# ------------------ MAIN TABS ------------------ #
+main_tab = st.tabs(["👤 Profile", "📝 Convert Notes", "📚 History"])
 
-# ---------------------- IMAGE INPUT ---------------------- #
-tab1, tab2 = st.tabs(["📤 Upload Image(s)", "📸 Take Photo"])
 
-images = []
+# -----------------------------------------------------------
+#              TAB 1 : USER PROFILE
+# -----------------------------------------------------------
+with main_tab[0]:
+    st.markdown("## 👤 Your Profile")
 
-with tab1:
-    uploaded_imgs = st.file_uploader(
-        "Upload handwritten notes",
-        type=["jpg", "png", "jpeg"],
-        accept_multiple_files=True
+    st.session_state.profile["name"] = st.text_input(
+        "Name", st.session_state.profile["name"]
     )
-    if uploaded_imgs:
-        for img in uploaded_imgs:
-            pil_img = Image.open(img)
+    st.session_state.profile["email"] = st.text_input(
+        "Email", st.session_state.profile["email"]
+    )
+
+    st.session_state.profile["language"] = st.selectbox(
+        "Preferred OCR Language",
+        ["eng", "hin", "mar", "urd", "tam", "kan"],
+        index=0
+    )
+
+    st.success("Profile Saved Automatically ✔")
+
+
+# -----------------------------------------------------------
+#               TAB 2 : CONVERT NOTES
+# -----------------------------------------------------------
+with main_tab[1]:
+
+    st.sidebar.header("⚙️ Settings")
+    st.sidebar.info("Upload or capture handwritten images. Tool extracts text & saves it.")
+
+    tab1, tab2 = st.tabs(["📤 Upload Image(s)", "📸 Take Photo"])
+
+    images = []
+
+    # ---------- Upload Multiple Images ----------
+    with tab1:
+        uploaded = st.file_uploader("Upload handwritten image(s)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+        if uploaded:
+            for img in uploaded:
+                pil_img = Image.open(img)
+                images.append(pil_img)
+                st.image(pil_img, caption=img.name, use_container_width=True)
+
+    # ---------- Camera Capture ----------
+    with tab2:
+        picture = st.camera_input("Capture handwritten note")
+        if picture:
+            pil_img = Image.open(picture)
             images.append(pil_img)
-            st.image(pil_img, use_container_width=True, caption=img.name)
+            st.image(pil_img, caption="Captured Image", use_container_width=True)
 
-with tab2:
-    picture = st.camera_input("Capture handwritten note")
-    if picture:
-        pil_img = Image.open(picture)
-        images.append(pil_img)
-        st.image(pil_img, caption="Captured Image", use_container_width=True)
+    # ---------- PROCESSING ----------
+    if len(images) > 0:
+        st.markdown("<h3>🔍 Extracting Text from Images...</h3>", unsafe_allow_html=True)
 
-# --------------- AUTO ENHANCEMENT ---------------- #
-def enhance_image(img):
-    img = img.convert("L")  # grayscale
-    enhancer = ImageEnhance.Contrast(img)
-    img = enhancer.enhance(2.0)
-    return img
+        extracted_full_text = ""
 
-# --------------------- PROCESSING ------------------------ #
-if len(images) > 0:
+        progress = st.progress(0)
 
-    st.markdown("<h3>🔍 Extracting Text...</h3>", unsafe_allow_html=True)
-    progress = st.progress(0)
-    extracted_text_all = ""
+        for i, img in enumerate(images):
+            time.sleep(0.4)
 
-    for i, img in enumerate(images):
+            img_array = np.array(img)
 
-        time.sleep(0.3)
+            extracted_text = pytesseract.image_to_string(
+                img_array,
+                lang=st.session_state.profile["language"]
+            )
 
-        enhanced = enhance_image(img)
+            extracted_full_text += f"\n\n--- Image {i+1} ---\n"
+            extracted_full_text += extracted_text
 
-        # RUN OCR
-        results = reader.readtext(np.array(enhanced), detail=0)
-        extracted_text = "\n".join(results)
+            progress.progress((i+1) / len(images))
 
-        extracted_text_all += f"\n\n--- Image {i+1} ---\n{extracted_text}"
+        st.success("🎉 Text Extracted Successfully!")
 
-        progress.progress((i + 1) / len(images))
+        # Save in history
+        st.session_state.history.append({
+            "timestamp": datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
+            "text": extracted_full_text
+        })
 
-    st.success("🎉 Extraction Complete!")
+        st.subheader("📝 Extracted Text")
+        text_output = st.text_area("Editable Text:", extracted_full_text, height=250)
 
-    # Show final editable text
-    st.subheader("📝 Extracted Text")
-    text_output = st.text_area("Editable text:", extracted_text_all, height=300)
+        st.subheader("💾 Save Your File")
 
-    # ---------------- DOWNLOAD SECTION ---------------- #
-    st.subheader("💾 Save Your File")
-
-    option = st.radio(
-        "Choose format:",
-        ["Text (.txt)", "Word (.docx)", "PDF (.pdf)"],
-        horizontal=True
-    )
-
-    # ---- TXT ---- #
-    if option == "Text (.txt)":
-        st.download_button(
-            label="📥 Download TXT",
-            data=text_output,
-            file_name="notes.txt",
-            mime="text/plain"
+        option = st.radio(
+            "Choose format:",
+            ["Text (.txt)", "Word (.docx)", "PDF (.pdf)"],
+            horizontal=True
         )
 
-    # ---- DOCX ---- #
-    elif option == "Word (.docx)":
-        doc = Document()
-        doc.add_paragraph(text_output)
+        # ---------- TEXT DOWNLOAD ----------
+        if option == "Text (.txt)":
+            st.download_button(
+                label="📥 Download TXT",
+                data=text_output,
+                file_name="notes.txt",
+                mime="text/plain"
+            )
 
-        buffer = io.BytesIO()
-        doc.save(buffer)
-        buffer.seek(0)
+        # ---------- DOCX DOWNLOAD ----------
+        elif option == "Word (.docx)":
+            doc = Document()
+            doc.add_paragraph(text_output)
 
-        st.download_button(
-            label="📥 Download DOCX",
-            data=buffer,
-            file_name="notes.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+            buffer = io.BytesIO()
+            doc.save(buffer)
+            buffer.seek(0)
 
-    # ---- PDF ---- #
-    elif option == "PDF (.pdf)":
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Arial", size=12)
+            st.download_button(
+                label="📥 Download DOCX",
+                data=buffer,
+                file_name="notes.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
 
-        for line in text_output.split("\n"):
-            pdf.multi_cell(0, 10, line)
+        # ---------- PDF DOWNLOAD ----------
+        elif option == "PDF (.pdf)":
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
 
-        buffer = io.BytesIO()
-        pdf.output(buffer)
-        buffer.seek(0)
+            for line in text_output.split("\n"):
+                pdf.multi_cell(0, 10, line)
 
-        st.download_button(
-            label="📥 Download PDF",
-            data=buffer,
-            file_name="notes.pdf",
-            mime="application/pdf"
-        )
+            pdf_buffer = io.BytesIO()
+            pdf.output(pdf_buffer)
+            pdf_buffer.seek(0)
 
-else:
-    st.info("📌 Upload or Capture an image to get started.")
+            st.download_button(
+                label="📥 Download PDF",
+                data=pdf_buffer,
+                file_name="notes.pdf",
+                mime="application/pdf"
+            )
+
+    else:
+        st.info("📌 Upload or capture a handwritten note to begin.")
+
+
+# -----------------------------------------------------------
+#                  TAB 3 : HISTORY
+# -----------------------------------------------------------
+with main_tab[2]:
+    st.markdown("## 📚 Conversion History")
+
+    if len(st.session_state.history) == 0:
+        st.info("No history yet. Convert some notes first!")
+    else:
+        for item in st.session_state.history:
+            st.markdown(f"### 🕒 {item['timestamp']}")
+            st.text_area("Saved text:", item["text"], height=200)
+
+        if st.button("🗑 Clear History"):
+            st.session_state.history = []
+            st.warning("History cleared!")
