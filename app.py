@@ -13,54 +13,22 @@ st.set_page_config(page_title="Handwritten to Text", layout="wide")
 
 st.markdown("""
     <h1 style='text-align:center; color:#4CAF50; font-size:42px'>
-        ✍️ Handwritten Notes → Digital Text <br> <span style='font-size:22px;'>Modern & Beautiful Converter</span>
+        ✍️ Handwritten Notes → Digital Text <br> 
+        <span style='font-size:22px;'>Fast · Accurate · Easy</span>
     </h1>
 """, unsafe_allow_html=True)
 
-# Initialize session state
+# Save history
 if "history" not in st.session_state:
     st.session_state.history = []
 
-if "profile" not in st.session_state:
-    st.session_state.profile = {
-        "name": "",
-        "email": "",
-        "language": "eng"
-    }
-
-# ------------------ MAIN TABS ------------------ #
-main_tab = st.tabs(["👤 Profile", "📝 Convert Notes", "📚 History"])
-
+# ---------------------- TABS ---------------------- #
+main_tab = st.tabs(["📝 Convert Notes", "📚 History"])
 
 # -----------------------------------------------------------
-#              TAB 1 : USER PROFILE
+#               TAB 1 : CONVERT NOTES
 # -----------------------------------------------------------
 with main_tab[0]:
-    st.markdown("## 👤 Your Profile")
-
-    st.session_state.profile["name"] = st.text_input(
-        "Name", st.session_state.profile["name"]
-    )
-    st.session_state.profile["email"] = st.text_input(
-        "Email", st.session_state.profile["email"]
-    )
-
-    st.session_state.profile["language"] = st.selectbox(
-        "Preferred OCR Language",
-        ["eng", "hin", "mar", "urd", "tam", "kan"],
-        index=0
-    )
-
-    st.success("Profile Saved Automatically ✔")
-
-
-# -----------------------------------------------------------
-#               TAB 2 : CONVERT NOTES
-# -----------------------------------------------------------
-with main_tab[1]:
-
-    st.sidebar.header("⚙️ Settings")
-    st.sidebar.info("Upload or capture handwritten images. Tool extracts text & saves it.")
 
     tab1, tab2 = st.tabs(["📤 Upload Image(s)", "📸 Take Photo"])
 
@@ -68,12 +36,16 @@ with main_tab[1]:
 
     # ---------- Upload Multiple Images ----------
     with tab1:
-        uploaded = st.file_uploader("Upload handwritten image(s)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+        uploaded = st.file_uploader(
+            "Upload handwritten image(s)",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True,
+        )
         if uploaded:
             for img in uploaded:
                 pil_img = Image.open(img)
                 images.append(pil_img)
-                st.image(pil_img, caption=img.name, use_container_width=True)
+                st.image(pil_img, caption=img.name, width="stretch")
 
     # ---------- Camera Capture ----------
     with tab2:
@@ -81,14 +53,13 @@ with main_tab[1]:
         if picture:
             pil_img = Image.open(picture)
             images.append(pil_img)
-            st.image(pil_img, caption="Captured Image", use_container_width=True)
+            st.image(pil_img, caption="Captured Image", width="stretch")
 
     # ---------- PROCESSING ----------
     if len(images) > 0:
-        st.markdown("<h3>🔍 Extracting Text from Images...</h3>", unsafe_allow_html=True)
+        st.markdown("### 🔍 Extracting Text from Images...")
 
         extracted_full_text = ""
-
         progress = st.progress(0)
 
         for i, img in enumerate(images):
@@ -96,13 +67,9 @@ with main_tab[1]:
 
             img_array = np.array(img)
 
-            extracted_text = pytesseract.image_to_string(
-                img_array,
-                lang=st.session_state.profile["language"]
-            )
+            extracted_text = pytesseract.image_to_string(img_array)
 
-            extracted_full_text += f"\n\n--- Image {i+1} ---\n"
-            extracted_full_text += extracted_text
+            extracted_full_text += f"\n\n--- Image {i+1} ---\n{extracted_text}"
 
             progress.progress((i+1) / len(images))
 
@@ -129,7 +96,7 @@ with main_tab[1]:
         if option == "Text (.txt)":
             st.download_button(
                 label="📥 Download TXT",
-                data=text_output,
+                data=text_output.encode("utf-8"),
                 file_name="notes.txt",
                 mime="text/plain"
             )
@@ -159,33 +126,32 @@ with main_tab[1]:
             for line in text_output.split("\n"):
                 pdf.multi_cell(0, 10, line)
 
-            pdf_buffer = io.BytesIO()
-            pdf.output(pdf_buffer)
-            pdf_buffer.seek(0)
+            pdf_bytes = pdf.output(dest="S").encode("latin-1")
 
             st.download_button(
                 label="📥 Download PDF",
-                data=pdf_buffer,
+                data=pdf_bytes,
                 file_name="notes.pdf",
                 mime="application/pdf"
             )
 
-    else:
-        st.info("📌 Upload or capture a handwritten note to begin.")
-
-
 # -----------------------------------------------------------
-#                  TAB 3 : HISTORY
+#                  TAB 2 : HISTORY
 # -----------------------------------------------------------
-with main_tab[2]:
+with main_tab[1]:
     st.markdown("## 📚 Conversion History")
 
     if len(st.session_state.history) == 0:
-        st.info("No history yet. Convert some notes first!")
+        st.info("No history yet.")
     else:
-        for item in st.session_state.history:
+        for i, item in enumerate(st.session_state.history):
             st.markdown(f"### 🕒 {item['timestamp']}")
-            st.text_area("Saved text:", item["text"], height=200)
+            st.text_area(
+                "Saved text:",
+                item["text"],
+                height=200,
+                key=f"history_{i}"  # UNIQUE KEY FIX
+            )
 
         if st.button("🗑 Clear History"):
             st.session_state.history = []
